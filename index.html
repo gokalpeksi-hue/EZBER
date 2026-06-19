@@ -119,10 +119,14 @@
   .form-actions{display:flex;gap:10px;margin-top:4px}
   .form-actions .btn{flex:1}
 
-  .list-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;gap:10px}
+  .list-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;gap:10px;flex-wrap:wrap}
   .list-head h2{font-family:'Fraunces',Georgia,serif;font-weight:600;font-size:18px}
   .list-head .search{max-width:200px}
   .list-head .search input{padding-top:9px;padding-bottom:9px}
+  .lh-tools{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+  .sortsel{font:inherit;font-size:13.5px;color:var(--ink);background:#fcfbf8;border:1px solid var(--line);border-radius:12px;padding:9px 12px;cursor:pointer}
+  .sortsel:focus{outline:none;border-color:var(--accent);background:#fff;box-shadow:0 0 0 3px rgba(31,41,51,.08)}
+  .mh{font-weight:700;font-size:1.06em}
   .rows{display:flex;flex-direction:column;gap:10px}
   .row{background:var(--card);border:1px solid var(--line);border-radius:14px;box-shadow:var(--shadow);padding:13px 14px;display:flex;gap:12px;align-items:flex-start}
   .row .dot{width:9px;height:9px;border-radius:50%;background:var(--line);margin-top:6px;flex-shrink:0}
@@ -261,9 +265,17 @@
 
     <div class="list-head">
       <h2>Kartlarım</h2>
-      <div class="search">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.3-4.3"/></svg>
-        <input type="text" id="searchInput" placeholder="Ara…">
+      <div class="lh-tools">
+        <select id="sortSel" class="sortsel" title="Sıralama">
+          <option value="new">Yeniden eskiye</option>
+          <option value="old">Eskiden yeniye</option>
+          <option value="az">A → Z (harf sırası)</option>
+          <option value="za">Z → A</option>
+        </select>
+        <div class="search">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.3-4.3"/></svg>
+          <input type="text" id="searchInput" placeholder="Ara…">
+        </div>
       </div>
     </div>
     <div class="rows" id="rows"></div>
@@ -303,7 +315,7 @@
   var $=function(id){ return document.getElementById(id); };
   function uid(){ return Date.now().toString(36)+Math.random().toString(36).slice(2,6); }
   function esc(s){ var d=document.createElement("div"); d.textContent=s; return d.innerHTML; }
-  function fmt(s){ var t=esc(s); t=t.replace(/\*\*([\s\S]+?)\*\*/g,"<strong>$1</strong>").replace(/__([\s\S]+?)__/g,"<strong>$1</strong>").replace(/\*([\s\S]+?)\*/g,"<em>$1</em>").replace(/_([\s\S]+?)_/g,"<em>$1</em>"); return t; }
+  function fmt(s){ var t=esc(s); t=t.replace(/^[ \t]*#{1,3}[ \t]+(.+)$/gm,'<span class="mh">$1</span>').replace(/\*\*([\s\S]+?)\*\*/g,"<strong>$1</strong>").replace(/__([\s\S]+?)__/g,"<strong>$1</strong>").replace(/\*([\s\S]+?)\*/g,"<em>$1</em>").replace(/_([\s\S]+?)_/g,"<em>$1</em>"); return t; }
   function byId(id){ for(var i=0;i<cards.length;i++){ if(cards[i].id===id) return cards[i]; } return null; }
   function toast(m){ var t=$("toast"); t.textContent=m; t.classList.add("show"); clearTimeout(t._t); t._t=setTimeout(function(){ t.classList.remove("show"); },1700); }
   function knownCount(){ var k=0; for(var i=0;i<cards.length;i++){ if(cards[i].known) k++; } return k; }
@@ -411,8 +423,15 @@
   function startEdit(id){ var c=byId(id); if(!c) return; editingId=id; $("inFront").value=c.front; $("inBack").value=c.back; $("formTitle").textContent="Kartı düzenle"; $("btnSave").textContent="Değişikliği kaydet"; $("btnCancelEdit").style.display="block"; $("inFront").focus(); window.scrollTo({top:0,behavior:"smooth"}); }
   function removeCard(id){ if(!confirm("Bu kart silinsin mi?")) return; cards=cards.filter(function(c){ return c.id!==id; }); if(editingId===id) clearForm(); save(); updateStats(); renderList(); toast("Kart silindi"); }
   function renderList(){
-    var q=$("searchInput").value.trim().toLowerCase(), rows=$("rows"), list=cards;
-    if(q) list=cards.filter(function(c){ return (c.front+" "+c.back).toLowerCase().indexOf(q)>=0; });
+    var q=$("searchInput").value.trim().toLowerCase(), rows=$("rows"), list=cards.slice();
+    if(q) list=list.filter(function(c){ return (c.front+" "+c.back).toLowerCase().indexOf(q)>=0; });
+    var sort=($("sortSel")&&$("sortSel").value)||"new";
+    list.sort(function(a,b){
+      if(sort==="az") return (a.front||"").localeCompare(b.front||"","tr",{sensitivity:"base"});
+      if(sort==="za") return (b.front||"").localeCompare(a.front||"","tr",{sensitivity:"base"});
+      if(sort==="old") return (a.created||0)-(b.created||0);
+      return (b.created||0)-(a.created||0);
+    });
     rows.innerHTML=""; $("listEmpty").style.display = cards.length? "none":"block";
     list.forEach(function(c){
       var hasBack=!!(c.back&&c.back.trim());
@@ -428,6 +447,7 @@
     });
   }
   $("searchInput").addEventListener("input",renderList);
+  $("sortSel").addEventListener("change",renderList);
 
   /* ===== Yedek ===== */
   $("btnExport").onclick=function(){
