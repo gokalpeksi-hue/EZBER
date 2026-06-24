@@ -295,6 +295,7 @@
       <button class="chip drive" id="btnDriveSave"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v12"/><path d="M7 10l5 5 5-5"/><path d="M5 21h14"/></svg>Drive'a yedekle</button>
       <button class="chip drive" id="btnDriveLoad"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 21V9"/><path d="M7 14l5-5 5 5"/><path d="M5 3h14"/></svg>Drive'dan yükle</button>
     </div>
+    <div class="tools-label" id="autoStatus" style="margin-top:8px"></div>
   </section>
 </div>
 
@@ -311,7 +312,7 @@
   /* ================================ */
   var KEY="ezber_cards_v1", memFallback=null;
   function load(){ try{ var r=localStorage.getItem(KEY); return r?JSON.parse(r):[]; }catch(e){ return memFallback||[]; } }
-  function save(){ try{ localStorage.setItem(KEY,JSON.stringify(cards)); }catch(e){ memFallback=cards.slice(); } }
+  function save(){ try{ localStorage.setItem(KEY,JSON.stringify(cards)); }catch(e){ memFallback=cards.slice(); } autoBackup(); }
 
   var cards=load(), editingId=null;
   var order=[], pos=0, onlyUnlearned=false, studyQuery="";
@@ -495,12 +496,19 @@
     return added;
   }
 
-  /* ===== Google Drive senkron ===== */
-  var tokenClient=null, driveToken=null;
+  /* ===== Google Drive senkron (otomatik) ===== */
+  var tokenClient=null, driveToken=null, autoTimer=null;
+  function autoOn(){ return localStorage.getItem("drive_auto")==="1"; }
+  function setAutoStatus(){
+    var el=$("autoStatus"); if(!el) return;
+    if(!GOOGLE_CLIENT_ID){ el.textContent="⚠ Otomatik yedek için Google kurulumu gerekli (GOOGLE_CLIENT_ID boş)"; }
+    else if(autoOn()){ el.textContent="✓ Otomatik Drive yedeği açık — her değişiklik otomatik kaydedilir"; }
+    else { el.textContent="Otomatik yedeği açmak için bir kez 'Drive'a yedekle'ye basın"; }
+  }
   function gisReady(){ return window.google && google.accounts && google.accounts.oauth2; }
-  function withToken(cb){
-    if(!GOOGLE_CLIENT_ID){ toast("Önce Google kurulumu gerekli"); return; }
-    if(!gisReady()){ toast("Google bağlanamadı, tekrar dene"); return; }
+  function withToken(cb, silent){
+    if(!GOOGLE_CLIENT_ID){ if(!silent) toast("Önce Google kurulumu gerekli"); return; }
+    if(!gisReady()){ if(!silent) toast("Google bağlanamadı, tekrar dene"); return; }
     if(!tokenClient){
       tokenClient=google.accounts.oauth2.initTokenClient({
         client_id:GOOGLE_CLIENT_ID,
@@ -509,10 +517,12 @@
       });
     }
     tokenClient.callback=function(resp){
-      if(resp&&resp.access_token){ driveToken=resp.access_token; cb(); }
-      else { toast("Drive izni alınamadı"); }
+      if(resp&&resp.access_token){ driveToken=resp.access_token; localStorage.setItem("drive_auto","1"); setAutoStatus(); cb(); }
+      else if(!silent){ toast("Drive izni alınamadı"); }
     };
-    tokenClient.requestAccessToken({ prompt: driveToken? "":"consent" });
+    tokenClient.error_callback=function(){ if(!silent) toast("Drive bağlantısı iptal edildi"); };
+    try{ tokenClient.requestAccessToken({ prompt: (driveToken||silent)? "":"consent" }); }
+    catch(e){ if(!silent) toast("Drive hatası"); }
   }
   function driveFindFile(){
     var url="https://www.googleapis.com/drive/v3/files?q="+encodeURIComponent("name='"+DRIVE_FILE_NAME+"' and trashed=false")+"&spaces=drive&fields=files(id,name)";
@@ -520,10 +530,10 @@
       .then(function(r){ return r.json(); })
       .then(function(j){ return (j.files&&j.files.length)? j.files[0].id : null; });
   }
-  function driveSave(){
+  function drivePush(silent){
     withToken(function(){
       var content=JSON.stringify(cards,null,2);
-      toast("Drive'a yazılıyor…");
+      if(!silent) toast("Drive'a yazılıyor…");
       driveFindFile().then(function(id){
         if(id){
           return fetch("https://www.googleapis.com/upload/drive/v3/files/"+id+"?uploadType=media",
@@ -537,28 +547,47 @@
             { method:"POST", headers:{ Authorization:"Bearer "+driveToken, "Content-Type":"multipart/related; boundary="+boundary }, body:body });
         }
       }).then(function(r){
-        if(r&&r.ok) toast("Drive'a yedeklendi ("+cards.length+" kart)");
-        else toast("Drive'a yazılamadı");
-      }).catch(function(){ toast("Drive hatası"); });
-    });
+        if(r&&r.ok){ if(!silent) toast("Drive'a yedeklendi ("+cards.length+" kart)"); }
+        else if(!silent) toast("Drive'a yazılamadı");
+      }).catch(function(){ if(!silent) toast("Drive hatası"); });
+    }, silent);
   }
-  function driveLoad(){
+  function driveSave(){ drivePush(false); }
+  function autoBackup(){
+    if(!GOOGLE_CLIENT_ID || !autoOn()) return;
+    clearTimeout(autoTimer);
+    autoTimer=setTimeout(function(){ drivePush(true); }, 1500);
+  }
+  function driveLoad(silent){
     withToken(function(){
-      toast("Drive'dan okunuyor…");
+      if(!silent) toast("Drive'dan okunuyor…");
       driveFindFile().then(function(id){
-        if(!id){ toast("Drive'da yedek bulunamadı"); return; }
+        if(!id){ if(!silent) toast("Drive'da yedek bulunamadı"); return; }
         return fetch("https://www.googleapis.com/drive/v3/files/"+id+"?alt=media",
           { headers:{ Authorization:"Bearer "+driveToken } })
           .then(function(r){ return r.text(); })
           .then(function(t){
             var added=mergeImported(JSON.parse(t));
-            if(added<0) toast("Yedek bozuk"); else toast(added+" yeni kart eklendi");
+            if(added<0){ if(!silent) toast("Yedek bozuk"); }
+            else if(added>0) toast(added+" kart Drive'dan geri yüklendi");
+            else if(!silent) toast("Yedek güncel, yeni kart yok");
           });
-      }).catch(function(){ toast("Drive hatası"); });
-    });
+      }).catch(function(){ if(!silent) toast("Drive hatası"); });
+    }, silent);
   }
   $("btnDriveSave").onclick=driveSave;
-  $("btnDriveLoad").onclick=driveLoad;
+  $("btnDriveLoad").onclick=function(){ driveLoad(false); };
+  /* Açılışta: otomatik yedek açıksa ve yerel boşsa Drive'dan sessizce geri yükle */
+  function autoRestoreOnStart(){
+    if(!GOOGLE_CLIENT_ID || !autoOn()) return;
+    var tries=0;
+    (function attempt(){
+      if(!gisReady()){ if(tries++<25) setTimeout(attempt,300); return; }
+      if(cards.length===0) driveLoad(true);
+    })();
+  }
+  setAutoStatus();
+  autoRestoreOnStart();
 
   updateStats();
   if(cards.length===0) setTab("add"); else setTab("study");
