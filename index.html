@@ -54,7 +54,7 @@
   .view.active{display:flex}
 
   .search{position:relative;width:100%}
-  .search input{width:100%;font:inherit;font-size:14px;color:var(--ink);background:var(--input);border:1px solid var(--line);border-radius:12px;padding:11px 12px 11px 36px;transition:.15s}
+  .search input[type=text]{width:100%;font:inherit;font-size:14px;color:var(--ink);background:var(--input);border:1px solid var(--line);border-radius:12px;padding:11px 12px 11px 36px;transition:.15s}
   .search input:focus{outline:none;border-color:var(--accent);background:var(--input-focus);box-shadow:0 0 0 3px rgba(52,160,106,.22)}
   .search svg{position:absolute;left:12px;top:50%;transform:translateY(-50%);width:15px;height:15px;color:var(--muted)}
 
@@ -460,7 +460,7 @@
     order=studyCards().map(function(c){ return c.id; });
     if(shuffle){ for(var i=order.length-1;i>0;i--){ var j=Math.floor(Math.random()*(i+1)); var t=order[i]; order[i]=order[j]; order[j]=t; } }
   }
-  function openFromList(id){ studyView="explain"; buildOrder(false); pos=order.indexOf(id); if(pos<0) pos=0; setStudyMode("card"); showCard(); }
+  function openFromList(id){ studyView="explain"; buildOrder(false); pos=order.indexOf(id); if(pos<0) pos=0; setStudyMode("card"); showCard(true); }
   $("chipStudyAll").onclick=function(){ if(cards.length===0) return; studyView="quiz"; buildOrder(false); pos=0; setStudyMode("card"); showCard(); };
   $("chipShuffle").onclick=function(){ if(cards.length===0) return; studyView="quiz"; buildOrder(true); pos=0; setStudyMode("card"); showCard(); toast("Kartlar karıştırıldı"); };
   $("chipUnlearned").onclick=function(){ onlyUnlearned=!onlyUnlearned; this.classList.toggle("on",onlyUnlearned); renderIndex(); };
@@ -468,16 +468,17 @@
   $("studySearch").addEventListener("input",function(){ studyQuery=this.value.trim(); renderIndex(); });
   $("btnBackList").onclick=function(){ setStudyMode("list"); renderIndex(); };
 
-  function showCard(){
+  function showCard(openExplain){
     var c=byId(order[pos]); if(!c){ enterStudy(); return; }
     $("cardFront").innerHTML=fmt(c.front); $("cardBack").innerHTML=fmt(c.back); $("cardBackQ").innerHTML=fmt(c.front);
     // Seçilen kelime başlık olarak
     $("studyTitle").textContent=c.front;
     $("studyTitle").style.fontSize=sizeFor(c.front,28,18)+"px";
     if(studyView==="explain"){
-      // Açıklama sayfası otomatik açılır; yazı boyutu cümle uzunluğuna göre
-      $("card").classList.add("flipped");
+      // Açıklama yazı boyutu cümle uzunluğuna göre (tıklayınca beyaz tarafta görünür)
       $("cardBack").style.fontSize=sizeFor(c.back,30,16)+"px";
+      // Sadece listeden seçimde açıklama otomatik açılır; kaydırma/gezinmede kelime (başlık) tarafı gelir
+      if(openExplain) $("card").classList.add("flipped"); else $("card").classList.remove("flipped");
     } else {
       $("card").classList.remove("flipped");
       $("cardBack").style.fontSize="";
@@ -487,8 +488,8 @@
     $("progressBar").style.width = cards.length? (knownCount()/cards.length*100)+"%" : "0%";
   }
   function flip(){ $("card").classList.toggle("flipped"); }
-  function next(){ if(order.length){ pos=(pos+1)%order.length; showCard(); } }
-  function prev(){ if(order.length){ pos=(pos-1+order.length)%order.length; showCard(); } }
+  function next(){ if(order.length){ pos=(pos+1)%order.length; showCard(false); } }
+  function prev(){ if(order.length){ pos=(pos-1+order.length)%order.length; showCard(false); } }
 
   // Kayarak geçiş: dir=+1 sonraki, dir=-1 önceki kelime
   function go(dir){
